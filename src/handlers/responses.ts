@@ -131,6 +131,7 @@ async function handleStreaming(
     flush();
 
     let buf = "";
+    let currentEvent = ""; // accumulate multi-line data events
     for await (const chunk of body) {
       buf += typeof chunk === "string" ? chunk : (chunk as Buffer).toString("utf-8");
       const lines = buf.split("\n");
@@ -138,17 +139,46 @@ async function handleStreaming(
 
       for (const line of lines) {
         const trimmed = line.trimEnd();
-        if (!trimmed) continue;
-        const parsed = parseChatSSELine(trimmed);
-        if (parsed === null) { translator.finish(); flush(); }
-        else if (parsed !== undefined) { translator.processChunk(parsed as ChatCompletionChunk); flush(); }
+        if (!trimmed) {
+          // end of event - parse accumulated data
+          if (currentEvent) {
+            const parsed = parseChatSSELine(currentEvent);
+            if (parsed === null) { translator.finish(); flush(); }
+            else if (parsed !== undefined) { translator.processChunk(parsed as ChatCompletionChunk); flush(); }
+            currentEvent = "";
+          }
+          continue;
+        }
+        // append to current event (strip "data: " prefix only on first line)
+        if (trimmed.startsWith("data:")) {
+          if (currentEvent) {
+            // already have some data - append after space
+            currentEvent += " " + trimmed.slice(5).trim();
+          } else {
+            currentEvent = trimmed;
+          }
+        } else if (currentEvent) {
+          // continuation line without data: prefix (common in multi-line JSON)
+          currentEvent += " " + trimmed.trim();
+        }
+        // ignore non-data lines
       }
     }
 
-    if (buf.trim()) {
-      const parsed = parseChatSSELine(buf.trim());
+    // handle any remaining event at end of stream
+    if (currentEvent) {
+      const parsed = parseChatSSELine(currentEvent);
       if (parsed === null) { translator.finish(); flush(); }
-      else if (parsed !== undefined) { translator.processChunk(parsed as ChatCompletionChunk); flush(); translator.finish(); flush(); }
+      else if (parsed !== undefined) { translator.processChunk(parsed as ChatCompletionChunk); flush(); }
+    }
+
+    // ensure finish is always called
+    translator.finish();
+    flush();
+
+    if (buf.trim()) {
+      // handle any remaining buffer that wasn't part of a complete event
+      // but we already called finish above to ensure completion
     }
   } catch (err) {
     log("error", "streaming failed", String(err));

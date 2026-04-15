@@ -5,3 +5,4 @@ dist/
 *.rej
 *.patch
 release/
+.DS_Store

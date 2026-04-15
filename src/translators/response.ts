@@ -132,6 +132,7 @@ export class ChatToResponsesSSETranslator {
   private toolCallStates = new Map<number, ToolCallState>();
   private usage: ChatCompletionChunk["usage"] | undefined;
   private eventBuffer: ResponseSSEEvent[] = [];
+  private finished = false;
 
   constructor(model: string) {
     this.responseId = makeResponseId();
@@ -249,13 +250,17 @@ export class ChatToResponsesSSETranslator {
       });
     }
 
-    const finalResponse = buildBaseResponse(
-      this.responseId, this.model, "completed", output,
-      this.usage
-        ? { prompt_tokens: this.usage.prompt_tokens, completion_tokens: this.usage.completion_tokens, total_tokens: this.usage.total_tokens }
-        : undefined,
-    );
-    this.emit({ type: "response.completed", response: finalResponse });
+    // Only emit response.completed once
+    if (!this.finished) {
+      this.finished = true;
+      const finalResponse = buildBaseResponse(
+        this.responseId, this.model, "completed", output,
+        this.usage
+          ? { prompt_tokens: this.usage.prompt_tokens, completion_tokens: this.usage.completion_tokens, total_tokens: this.usage.total_tokens }
+          : undefined,
+      );
+      this.emit({ type: "response.completed", response: finalResponse });
+    }
   }
 
   emitError(code: string, message: string): void {
