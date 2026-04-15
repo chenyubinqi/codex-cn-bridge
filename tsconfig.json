@@ -12,6 +12,6 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*", "electron/**/*"],
+  "exclude": ["node_modules", "dist", "electron/dist"]
 }

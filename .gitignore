@@ -4,3 +4,4 @@ dist/
 *.orig
 *.rej
 *.patch
+release/

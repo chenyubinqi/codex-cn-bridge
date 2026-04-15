@@ -172,6 +172,30 @@ npm run build
 # 生成 dist/index.js，可以 node dist/index.js 运行
 ```
 
+## 桌面应用（菜单栏版）
+
+除了命令行启动，我们还提供**菜单栏桌面应用**，支持一键启停、图形化操作：
+
+### 功能特点
+
+- ✅ 只在系统菜单栏/状态栏显示图标，不占用任务栏/Dock
+- ✅ 一键点击启动/停止桥接服务
+- ✅ 图标颜色指示状态：绿色 = 运行中，灰色 = 已停止
+- ✅ 打开配置文件直接编辑，首次运行自动创建默认配置
+- ✅ 应用启动自动启动服务
+- ✅ 支持 macOS / Windows / Linux
+
+### 从源码打包
+
+```bash
+# 先修改 package.json，把 main 改为 "electron/dist/main.js"
+npm install
+npm run package:mac      # 打包 macOS DMG
+npm run package:win      # 打包 Windows
+npm run package:linux    # 打包 Linux
+# 打包完成后记得改回 main 为 "dist/index.js" 保持 CLI 功能正常
+```
+
 ## 故障排查
 
 **Codex 连接失败**：确认 bridge 正常运行，`curl http://127.0.0.1:8088/health` 应返回 `{"status":"ok",...}`。
@@ -181,3 +205,5 @@ npm run build
 **模型不存在**：检查 `model_map` 配置，确保 Codex 使用的模型名有对应映射。
 
 **工具调用不工作**：部分国内 LLM（如免费版 Qwen）不支持 Function Calling，请切换到付费版本或支持工具调用的模型。
+
+**菜单栏应用闪退**：确认系统已安装 Node.js，应用会自动在系统路径查找 node。
