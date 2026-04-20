@@ -64,8 +64,10 @@ export async function handleResponses(req: Request, res: Response): Promise<void
 
   const upstreamUrl = `${providerCfg.base_url.replace(/\/$/, "")}/chat/completions`;
 
+  const debug = config.log_level === "debug";
+
   if (chatReq.stream !== false) {
-    await handleStreaming(res, upstreamUrl, providerCfg.api_key, chatReq, resolvedModel);
+    await handleStreaming(res, upstreamUrl, providerCfg.api_key, chatReq, resolvedModel, debug);
   } else {
     await handleSync(res, upstreamUrl, providerCfg.api_key, chatReq);
   }
@@ -94,7 +96,7 @@ async function handleSync(
 }
 
 async function handleStreaming(
-  res: Response, url: string, apiKey: string, chatReq: ChatCompletionsRequest, model: string
+  res: Response, url: string, apiKey: string, chatReq: ChatCompletionsRequest, model: string, debug: boolean
 ): Promise<void> {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -136,6 +138,26 @@ async function handleStreaming(
     let buf = "";
     let currentEventLines: string[] = [];
     let upstreamDone = false;
+    let sawTerminalFinishReason = false;
+    const parseEventPayload = (payload: string): ChatCompletionChunk | null | undefined => {
+      // 标准路径
+      const direct = parseChatSSELine(`data: ${payload}`);
+      if (direct !== undefined) return direct;
+
+      // 兼容部分上游对多行 data 的非标准切分：尝试无分隔拼接
+      if (payload.includes("\n")) {
+        const compact = payload.replace(/\n/g, "");
+        const compactParsed = parseChatSSELine(`data: ${compact}`);
+        if (compactParsed !== undefined) return compactParsed;
+
+        // 再尝试空白拼接
+        const spaced = payload.replace(/\n+/g, " ");
+        const spacedParsed = parseChatSSELine(`data: ${spaced}`);
+        if (spacedParsed !== undefined) return spacedParsed;
+      }
+
+      return undefined;
+    };
     const flushEvent = () => {
       if (currentEventLines.length === 0) return;
       const payload = currentEventLines.join("\n").trim();
@@ -151,8 +173,14 @@ async function handleStreaming(
       }
 
       // 常规：一个 event 对应一个 JSON。
-      const parsed = parseChatSSELine(`data: ${payload}`);
+      const parsed = parseEventPayload(payload);
       if (parsed !== undefined && parsed !== null) {
+        if (debug) {
+          for (const c of parsed.choices) {
+            if (c.finish_reason) log("debug", `upstream finish_reason=${c.finish_reason}`);
+          }
+        }
+        if (parsed.choices.some((c) => c.finish_reason != null)) sawTerminalFinishReason = true;
         translator.processChunk(parsed as ChatCompletionChunk);
         flush();
         return;
@@ -171,6 +199,7 @@ async function handleStreaming(
         }
         if (each !== undefined) {
           processedAny = true;
+          if (each.choices.some((c) => c.finish_reason != null)) sawTerminalFinishReason = true;
           translator.processChunk(each as ChatCompletionChunk);
         }
       }
@@ -209,14 +238,20 @@ async function handleStreaming(
     // handle any remaining event at end of stream
     flushEvent();
 
-    // ensure finish is always called
+    // 若无 [DONE] 且也没见到 finish_reason，通常表示上游流异常中断。
+    // 避免把不完整结果错误标记为 completed。
+    if (!upstreamDone && !sawTerminalFinishReason) {
+      log("warn", "upstream stream ended without terminal marker");
+      translator.emitError("upstream_incomplete", "Upstream stream ended before completion marker");
+      flush();
+      return;
+    }
+
     translator.finish();
     flush();
 
-    if (buf.trim()) {
-      // handle any remaining buffer that wasn't part of a complete event
-      // but we already called finish above to ensure completion
-    }
+    const finalReason = translator.getLastFinishReason();
+    log("info", `← finish_reason=${finalReason ?? "null"}${upstreamDone ? " [DONE]" : ""}`);
   } catch (err) {
     log("error", "streaming failed", String(err));
     translator.emitError("bridge_error", String(err));

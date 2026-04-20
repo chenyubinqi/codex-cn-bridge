@@ -305,6 +305,8 @@ export interface ChatMessage {
   content: string | ChatContentPart[] | null;
   name?: string;
   tool_calls?: ChatToolCall[];
+  /** 兼容旧版 OpenAI / 部分厂商返回 */
+  function_call?: ChatFunctionCall;
   tool_call_id?: string;
 }
 
@@ -350,7 +352,7 @@ export interface ChatCompletionsResponse {
   choices: Array<{
     index: number;
     message: ChatMessage;
-    finish_reason: "stop" | "length" | "tool_calls" | "content_filter" | null;
+    finish_reason: "stop" | "length" | "tool_calls" | "function_call" | "content_filter" | null;
     logprobs?: unknown;
   }>;
   usage?: {
@@ -374,6 +376,8 @@ export interface ChatCompletionChunk {
     delta: {
       role?: ChatRole;
       content?: string | null;
+      /** 兼容旧版 OpenAI / 部分厂商返回 */
+      function_call?: Partial<ChatFunctionCall>;
       tool_calls?: Array<{
         index: number;
         id?: string;
@@ -384,7 +388,7 @@ export interface ChatCompletionChunk {
         };
       }>;
     };
-    finish_reason: "stop" | "length" | "tool_calls" | "content_filter" | null;
+    finish_reason: "stop" | "length" | "tool_calls" | "function_call" | "content_filter" | null;
     logprobs?: unknown;
   }>;
   usage?: {

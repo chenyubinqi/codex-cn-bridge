@@ -3,8 +3,6 @@ import type {
   ChatCompletionChunk,
   ResponsesApiResponse,
   ResponseSSEEvent,
-  InputMessageItem,
-  FunctionCallItem,
   ResponseItem,
 } from "../types.js";
 import { randomUUID } from "crypto";
@@ -15,6 +13,10 @@ function makeResponseId(): string {
 
 function makeItemId(): string {
   return `msg_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+}
+
+function makeCallId(): string {
+  return `call_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 }
 
 function nowSeconds(): number {
@@ -77,6 +79,16 @@ export function translateChatResponseToResponses(
           status: "completed",
         });
       }
+    } else if (msg.function_call) {
+      // 兼容旧版 OpenAI / 部分厂商返回
+      output.push({
+        type: "function_call",
+        id: makeItemId(),
+        call_id: makeCallId(),
+        name: msg.function_call.name ?? "",
+        arguments: msg.function_call.arguments ?? "",
+        status: "completed",
+      });
     } else {
       const raw = msg.content;
       const text = typeof raw === "string"
@@ -130,13 +142,31 @@ export class ChatToResponsesSSETranslator {
   private textItemStarted = false;
 
   private toolCallStates = new Map<number, ToolCallState>();
+  // 旧版 function_call 流没有 index，用固定 key。
+  private static readonly LEGACY_FC_KEY = -1;
+
   private usage: ChatCompletionChunk["usage"] | undefined;
   private eventBuffer: ResponseSSEEvent[] = [];
+
+  /** 已发出 output_item.done 的条目，用于 response.completed.output 汇总。 */
+  private emittedItems: ResponseItem[] = [];
+
   private finished = false;
+  private failed = false;
+
+  /** 上游最近一次 finish_reason，用于判定终态。 */
+  private lastFinishReason: ChatCompletionChunk["choices"][number]["finish_reason"] | null = null;
+  /** 整条流里是否出现过任何 tool_calls（用于识别 finish_reason=tool_calls 却无 tool_calls 的协议违规）。 */
+  private sawToolCallsArray = false;
 
   constructor(model: string) {
     this.responseId = makeResponseId();
     this.model = model;
+  }
+
+  /** 调用方（handler）可读取，用于日志/诊断。 */
+  getLastFinishReason(): ChatCompletionChunk["choices"][number]["finish_reason"] | null {
+    return this.lastFinishReason;
   }
 
   start(): void {
@@ -164,6 +194,7 @@ export class ChatToResponsesSSETranslator {
       }
 
       if (delta.tool_calls) {
+        this.sawToolCallsArray = true;
         for (const tc of delta.tool_calls) {
           const existing = this.toolCallStates.get(tc.index);
           if (existing) {
@@ -179,13 +210,14 @@ export class ChatToResponsesSSETranslator {
                 delta: argsDelta,
               });
             }
+            if (tc.function?.name && !existing.name) existing.name = tc.function.name;
           } else {
             // 新工具调用 → 先关闭文本
             if (this.textItemStarted) this.closeTextItem();
 
             const state: ToolCallState = {
               itemId: makeItemId(),
-              callId: tc.id ?? makeItemId(),
+              callId: tc.id ?? makeCallId(),
               name: tc.function?.name ?? "",
               argumentsBuf: tc.function?.arguments ?? "",
               outputIndex: this.outputIndex,
@@ -220,50 +252,120 @@ export class ChatToResponsesSSETranslator {
         }
       }
 
-      if (finish_reason) this.closeAllOpenItems();
+      // 兼容旧版 function_call 流（非 tool_calls）
+      if (delta.function_call) {
+        this.sawToolCallsArray = true;
+        const key = ChatToResponsesSSETranslator.LEGACY_FC_KEY;
+        const existing = this.toolCallStates.get(key);
+        if (existing) {
+          if (delta.function_call.name && !existing.name) existing.name = delta.function_call.name;
+          const argsDelta = delta.function_call.arguments ?? "";
+          if (argsDelta) {
+            existing.argumentsBuf += argsDelta;
+            this.emit({
+              type: "response.function_call_arguments.delta",
+              item_id: existing.itemId,
+              output_index: existing.outputIndex,
+              call_id: existing.callId,
+              delta: argsDelta,
+            });
+          }
+        } else {
+          if (this.textItemStarted) this.closeTextItem();
+
+          const state: ToolCallState = {
+            itemId: makeItemId(),
+            callId: makeCallId(),
+            name: delta.function_call.name ?? "",
+            argumentsBuf: delta.function_call.arguments ?? "",
+            outputIndex: this.outputIndex,
+          };
+          this.toolCallStates.set(key, state);
+
+          this.emit({
+            type: "response.output_item.added",
+            output_index: this.outputIndex,
+            item: {
+              type: "function_call",
+              id: state.itemId,
+              call_id: state.callId,
+              name: state.name,
+              arguments: "",
+              status: "in_progress",
+            },
+          });
+
+          if (state.argumentsBuf) {
+            this.emit({
+              type: "response.function_call_arguments.delta",
+              item_id: state.itemId,
+              output_index: state.outputIndex,
+              call_id: state.callId,
+              delta: state.argumentsBuf,
+            });
+          }
+
+          this.outputIndex += 1;
+        }
+      }
+
+      if (finish_reason) {
+        this.lastFinishReason = finish_reason;
+        this.closeAllOpenItems();
+      }
     }
   }
 
   finish(): void {
     this.closeAllOpenItems();
 
-    const output: ResponseItem[] = [];
+    if (this.finished || this.failed) return;
 
-    if (this.accumulatedText || this.textItemStarted) {
-      output.push({
-        type: "message",
-        id: this.textItemId || makeItemId(),
-        role: "assistant",
-        content: [{ type: "output_text", text: this.accumulatedText }],
-        status: "completed",
-      });
-    }
-
-    for (const [, s] of this.toolCallStates) {
-      output.push({
-        type: "function_call",
-        id: s.itemId,
-        call_id: s.callId,
-        name: s.name,
-        arguments: s.argumentsBuf,
-        status: "completed",
-      });
-    }
-
-    // Only emit response.completed once
-    if (!this.finished) {
-      this.finished = true;
-      const finalResponse = buildBaseResponse(
-        this.responseId, this.model, "completed", output,
-        this.usage
-          ? { prompt_tokens: this.usage.prompt_tokens, completion_tokens: this.usage.completion_tokens, total_tokens: this.usage.total_tokens }
-          : undefined,
+    // 协议违规：上游声称是 tool_calls 结束，却从未发过任何 tool_calls / function_call。
+    // 这种情况静默 complete 会让 Codex 以为任务结束；显式失败更能暴露问题。
+    if (this.lastFinishReason === "tool_calls" && !this.sawToolCallsArray) {
+      this.emitError(
+        "upstream_empty_tool_calls",
+        "Upstream finished with reason=tool_calls but emitted no tool_calls payload.",
       );
-      this.emit({ type: "response.completed", response: finalResponse });
+      return;
     }
+
+    this.finished = true;
+
+    // finish_reason 到 Responses API 终态的映射：
+    //   stop / tool_calls / function_call / null → completed
+    //   length                                   → incomplete (max_output_tokens)
+    //   content_filter                           → incomplete (content_filter)
+    const usage = this.usage
+      ? {
+          prompt_tokens: this.usage.prompt_tokens,
+          completion_tokens: this.usage.completion_tokens,
+          total_tokens: this.usage.total_tokens,
+        }
+      : undefined;
+
+    if (this.lastFinishReason === "length" || this.lastFinishReason === "content_filter") {
+      const reason = this.lastFinishReason === "length" ? "max_output_tokens" : "content_filter";
+      const resp = buildBaseResponse(this.responseId, this.model, "incomplete", this.emittedItems, usage);
+      resp.incomplete_details = { reason };
+      this.emit({ type: "response.incomplete", response: resp });
+      return;
+    }
+
+    const finalResponse = buildBaseResponse(
+      this.responseId,
+      this.model,
+      "completed",
+      this.emittedItems,
+      usage,
+    );
+    this.emit({ type: "response.completed", response: finalResponse });
   }
 
   emitError(code: string, message: string): void {
+    if (this.finished || this.failed) return;
+    this.failed = true;
     this.emit({ type: "error", code, message });
     const failed = buildBaseResponse(this.responseId, this.model, "failed");
     failed.error = { code, message };
@@ -310,30 +412,42 @@ export class ChatToResponsesSSETranslator {
   private closeTextItem(): void {
     if (!this.textItemStarted) return;
 
+    const text = this.accumulatedText;
+    const itemId = this.textItemId;
+    const outputIndex = this.outputIndex;
+
     this.emit({
       type: "response.output_text.done",
-      item_id: this.textItemId,
-      output_index: this.outputIndex,
+      item_id: itemId,
+      output_index: outputIndex,
       content_index: 0,
-      text: this.accumulatedText,
+      text,
     });
     this.emit({
       type: "response.content_part.done",
-      item_id: this.textItemId,
-      output_index: this.outputIndex,
+      item_id: itemId,
+      output_index: outputIndex,
       content_index: 0,
-      part: { type: "output_text", text: this.accumulatedText },
+      part: { type: "output_text", text },
     });
     this.emit({
       type: "response.output_item.done",
-      output_index: this.outputIndex,
+      output_index: outputIndex,
       item: {
         type: "message",
-        id: this.textItemId,
+        id: itemId,
         role: "assistant",
-        content: [{ type: "output_text", text: this.accumulatedText }],
+        content: [{ type: "output_text", text }],
         status: "completed",
       },
+    });
+
+    this.emittedItems.push({
+      type: "message",
+      id: itemId,
+      role: "assistant",
+      content: [{ type: "output_text", text }],
+      status: "completed",
     });
 
     this.outputIndex += 1;
@@ -362,13 +476,22 @@ export class ChatToResponsesSSETranslator {
           status: "completed",
         },
       });
+
+      this.emittedItems.push({
+        type: "function_call",
+        id: s.itemId,
+        call_id: s.callId,
+        name: s.name,
+        arguments: s.argumentsBuf,
+        status: "completed",
+      });
     }
+    this.toolCallStates.clear();
   }
 
   private closeAllOpenItems(): void {
     if (this.textItemStarted) this.closeTextItem();
     this.closeToolCalls();
-    this.toolCallStates.clear();
   }
 }
 

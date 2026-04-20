@@ -8,7 +8,7 @@ provider: deepseek
 port: 8088
 
 # 日志级别：debug | info | warn | error
-log_level: info
+log_level: debug
 
 # Codex 内部会用轻量模型（如 gpt-5.4-mini）做后台分析/评估
 # 可以为这类请求指定单独的 provider（推荐用快速便宜的模型）
@@ -43,6 +43,13 @@ providers:
       moonshot-v1-32k: moonshot-v1-32k
       moonshot-v1-128k: moonshot-v1-128k
 
+  minimax:
+    base_url: https://api.minimax.chat/v1
+    api_key: ${MINIMAX_API_KEY}
+    model_map:
+      "*": minimax-text-01
+      minimax-text-02: minimax-text-02
+
   zhipu:
     base_url: https://open.bigmodel.cn/api/paas/v4
     api_key: ${ZHIPU_API_KEY}
@@ -59,7 +66,7 @@ providers:
     base_url: https://ark.cn-beijing.volces.com/api/coding/v3
     api_key: ${VOLC_API_KEY}
     model_map:
-      "*": ark-code-latest
+      "*": glm-4.7
 
   # 火山引擎方舟（通用 Doubao 模型）
   # model_map 的 value 填写模型名或推理接入点 ID（ep-xxxxxxxx-xxxxx）

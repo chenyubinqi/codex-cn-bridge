@@ -35,7 +35,7 @@ function findConfigFile(): string {
   const defaultPath = path.join(homedir(), ".codex-cn-bridge.yaml");
   if (!fs.existsSync(defaultPath)) {
     const defaultConfig = `# Codex CN Bridge 配置文件
-# 详细文档: https://github.com/samchen2008/codex-cn-bridge
+# 详细文档: https://github.com/chenyubinqi/codex-cn-bridge
 
 # 当前激活的 provider
 provider: deepseek
@@ -71,6 +71,12 @@ providers:
     api_key: \${ZHIPU_API_KEY}
     model_map:
       "*": glm-4-plus
+
+  minimax:
+    base_url: https://api.minimax.chat/v1
+    api_key: \${MINIMAX_API_KEY}
+    model_map:
+      "*": minimax-text-01
 
   # 本地 Ollama
   ollama:

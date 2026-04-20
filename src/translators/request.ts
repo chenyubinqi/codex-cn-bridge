@@ -157,8 +157,17 @@ export function translateRequestToChatCompletions(
   };
 
   if (tools.length > 0) chatReq.tools = tools;
-  if (tool_choice !== undefined) chatReq.tool_choice = tool_choice;
-  if (req.parallel_tool_calls !== undefined) chatReq.parallel_tool_calls = req.parallel_tool_calls;
+  if (tool_choice !== undefined) {
+    chatReq.tool_choice = tool_choice;
+  } else if (tools.length > 0) {
+    // 对部分兼容端点，未显式设置 tool_choice 时可能忽略 tools。
+    chatReq.tool_choice = "auto";
+  }
+  if (req.parallel_tool_calls !== undefined) {
+    chatReq.parallel_tool_calls = req.parallel_tool_calls;
+  } else if (tools.length > 0) {
+    chatReq.parallel_tool_calls = true;
+  }
   if (req.temperature !== undefined) chatReq.temperature = req.temperature;
   if (req.top_p !== undefined) chatReq.top_p = req.top_p;
   if (req.max_output_tokens !== undefined) chatReq.max_tokens = req.max_output_tokens;
