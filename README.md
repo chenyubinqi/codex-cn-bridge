@@ -102,15 +102,17 @@ codex
 
 ## 支持的国内大模型
 
-| Provider | base_url | 模型示例 |
-|---|---|---|
-| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat`, `deepseek-reasoner` |
-| 通义千问 (Qwen) | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus`, `qwen-turbo`, `qwen-max` |
-| Moonshot (Kimi) | `https://api.moonshot.cn/v1` | `moonshot-v1-8k`, `moonshot-v1-128k` |
-| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash`, `glm-4-plus` |
-| 火山引擎方舟 Code Plan | `https://ark.cn-beijing.volces.com/api/coding/v3` | `ark-code-latest`（Auto 模式，按效果+速度智能选模型）|
-| 火山引擎方舟 (Doubao) | `https://ark.cn-beijing.volces.com/api/v3` | `doubao-pro-32k`, `doubao-pro-128k`, 推理接入点 ID |
-| 任意兼容 OpenAI Chat Completions 的服务 | 自定义 | 自定义 |
+
+| Provider                         | base_url                                            | 模型示例                                          |
+| -------------------------------- | --------------------------------------------------- | --------------------------------------------- |
+| DeepSeek                         | `https://api.deepseek.com/v1`                       | `deepseek-chat`, `deepseek-reasoner`          |
+| 通义千问 (Qwen)                      | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus`, `qwen-turbo`, `qwen-max`         |
+| Moonshot (Kimi)                  | `https://api.moonshot.cn/v1`                        | `moonshot-v1-8k`, `moonshot-v1-128k`          |
+| 智谱 GLM                           | `https://open.bigmodel.cn/api/paas/v4`              | `glm-4-flash`, `glm-4-plus`                   |
+| 火山引擎方舟 Code Plan                 | `https://ark.cn-beijing.volces.com/api/coding/v3`   | `ark-code-latest`（Auto 模式，按效果+速度智能选模型）        |
+| 火山引擎方舟 (Doubao)                  | `https://ark.cn-beijing.volces.com/api/v3`          | `doubao-pro-32k`, `doubao-pro-128k`, 推理接入点 ID |
+| 任意兼容 OpenAI Chat Completions 的服务 | 自定义                                                 | 自定义                                           |
+
 
 > 本地 Ollama 也支持：`base_url: http://localhost:11434/v1`，`api_key: ollama`
 
@@ -118,14 +120,16 @@ codex
 
 ### 请求翻译
 
-| Responses API 字段 | Chat Completions 字段 |
-|---|---|
-| `instructions` | `messages[0]`（role: system）|
-| `input[]`（消息/工具调用/工具结果） | `messages[]` |
-| `tools[].type === "function"` | `tools[]`（function 定义）|
-| `web_search_preview` / `file_search` | 忽略（国内 LLM 不支持）|
-| `text.format` | `response_format` |
-| `max_output_tokens` | `max_tokens` |
+
+| Responses API 字段                     | Chat Completions 字段         |
+| ------------------------------------ | --------------------------- |
+| `instructions`                       | `messages[0]`（role: system） |
+| `input[]`（消息/工具调用/工具结果）              | `messages[]`                |
+| `tools[].type === "function"`        | `tools[]`（function 定义）      |
+| `web_search_preview` / `file_search` | 忽略（国内 LLM 不支持）              |
+| `text.format`                        | `response_format`           |
+| `max_output_tokens`                  | `max_tokens`                |
+
 
 ### 响应 SSE 事件序列
 
@@ -155,15 +159,17 @@ response.output_item.done
 
 ## 环境变量参考
 
-| 变量 | 说明 | 默认值 |
-|---|---|---|
-| `BRIDGE_CONFIG` | 配置文件路径 | 自动搜索 |
-| `BRIDGE_PORT` | 监听端口 | `8088` |
-| `BRIDGE_HOST` | 监听地址 | `127.0.0.1` |
-| `BRIDGE_PROVIDER` | Provider 名称（无配置文件时使用）| `deepseek` |
-| `BRIDGE_BASE_URL` | 上游 base_url（无配置文件时使用）| `https://api.deepseek.com/v1` |
-| `BRIDGE_API_KEY` | 上游 API Key（无配置文件时使用）| — |
-| `BRIDGE_MODEL` | 上游模型名（无配置文件时使用）| `deepseek-chat` |
+
+| 变量                | 说明                    | 默认值                           |
+| ----------------- | --------------------- | ----------------------------- |
+| `BRIDGE_CONFIG`   | 配置文件路径                | 自动搜索                          |
+| `BRIDGE_PORT`     | 监听端口                  | `8088`                        |
+| `BRIDGE_HOST`     | 监听地址                  | `127.0.0.1`                   |
+| `BRIDGE_PROVIDER` | Provider 名称（无配置文件时使用） | `deepseek`                    |
+| `BRIDGE_BASE_URL` | 上游 base_url（无配置文件时使用） | `https://api.deepseek.com/v1` |
+| `BRIDGE_API_KEY`  | 上游 API Key（无配置文件时使用）  | —                             |
+| `BRIDGE_MODEL`    | 上游模型名（无配置文件时使用）       | `deepseek-chat`               |
+
 
 ## 构建可执行文件
 

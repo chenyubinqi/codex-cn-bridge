@@ -116,6 +116,9 @@ async function handleStreaming(
         Accept: "text/event-stream",
       },
       body: JSON.stringify(chatReq),
+      // 长任务（代码生成/规划）可能无输出超过默认超时窗口，关闭超时避免被提前中断。
+      headersTimeout: 0,
+      bodyTimeout: 0,
     });
 
     if (statusCode !== 200) {
@@ -131,8 +134,55 @@ async function handleStreaming(
     flush();
 
     let buf = "";
-    let currentEvent = ""; // accumulate multi-line data events
-    for await (const chunk of body) {
+    let currentEventLines: string[] = [];
+    let upstreamDone = false;
+    const flushEvent = () => {
+      if (currentEventLines.length === 0) return;
+      const payload = currentEventLines.join("\n").trim();
+      currentEventLines = [];
+      if (!payload) return;
+
+      // 标准 OpenAI SSE 结束标记
+      if (payload === "[DONE]") {
+        upstreamDone = true;
+        translator.finish();
+        flush();
+        return;
+      }
+
+      // 常规：一个 event 对应一个 JSON。
+      const parsed = parseChatSSELine(`data: ${payload}`);
+      if (parsed !== undefined && parsed !== null) {
+        translator.processChunk(parsed as ChatCompletionChunk);
+        flush();
+        return;
+      }
+
+      // 兼容：个别服务会把多个 JSON data 行塞进同一个 event（非标准但常见）。
+      const lines = payload.split("\n").map((s) => s.trim()).filter(Boolean);
+      let processedAny = false;
+      for (const line of lines) {
+        const each = parseChatSSELine(`data: ${line}`);
+        if (each === null) {
+          upstreamDone = true;
+          translator.finish();
+          flush();
+          return;
+        }
+        if (each !== undefined) {
+          processedAny = true;
+          translator.processChunk(each as ChatCompletionChunk);
+        }
+      }
+      if (processedAny) {
+        flush();
+        return;
+      }
+
+      log("warn", "skip unparseable upstream SSE payload", payload.slice(0, 300));
+    };
+
+    outer: for await (const chunk of body) {
       buf += typeof chunk === "string" ? chunk : (chunk as Buffer).toString("utf-8");
       const lines = buf.split("\n");
       buf = lines.pop() ?? "";
@@ -140,37 +190,24 @@ async function handleStreaming(
       for (const line of lines) {
         const trimmed = line.trimEnd();
         if (!trimmed) {
-          // end of event - parse accumulated data
-          if (currentEvent) {
-            const parsed = parseChatSSELine(currentEvent);
-            if (parsed === null) { translator.finish(); flush(); }
-            else if (parsed !== undefined) { translator.processChunk(parsed as ChatCompletionChunk); flush(); }
-            currentEvent = "";
-          }
+          flushEvent();
+          if (upstreamDone) break outer;
           continue;
         }
-        // append to current event (strip "data: " prefix only on first line)
+
+        // 收集 data 行，兼容 continuation 行。
         if (trimmed.startsWith("data:")) {
-          if (currentEvent) {
-            // already have some data - append after space
-            currentEvent += " " + trimmed.slice(5).trim();
-          } else {
-            currentEvent = trimmed;
-          }
-        } else if (currentEvent) {
+          currentEventLines.push(trimmed.slice(5).trimStart());
+        } else if (currentEventLines.length > 0) {
           // continuation line without data: prefix (common in multi-line JSON)
-          currentEvent += " " + trimmed.trim();
+          currentEventLines.push(trimmed.trim());
         }
         // ignore non-data lines
       }
     }
 
     // handle any remaining event at end of stream
-    if (currentEvent) {
-      const parsed = parseChatSSELine(currentEvent);
-      if (parsed === null) { translator.finish(); flush(); }
-      else if (parsed !== undefined) { translator.processChunk(parsed as ChatCompletionChunk); flush(); }
-    }
+    flushEvent();
 
     // ensure finish is always called
     translator.finish();

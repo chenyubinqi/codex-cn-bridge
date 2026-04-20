@@ -6,3 +6,4 @@ dist/
 *.patch
 release/
 .DS_Store
+.omx/
