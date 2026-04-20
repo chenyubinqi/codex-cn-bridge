@@ -15,7 +15,6 @@ function generateIcon(color, filename) {
   ctx.clearRect(0, 0, size, size);
 
   // Draw a simple bridge/icon shape
-  // We'll draw a rounded square with a diagonal "bridge"
   const padding = 4;
   const radius = 4;
 
@@ -43,16 +42,31 @@ generateIcon('#4CAF50', 'icon-green.png');
 generateIcon('#9E9E9E', 'icon-gray.png');
 console.log('All tray icons generated!');
 
-// Generate app icon in various sizes
+// Generate app icon in proper macOS iconset format
 function generateAppIcon() {
-  const sizes = [16, 32, 64, 128, 256, 512, 1024];
-  const outputDir = path.join(__dirname, 'assets', 'iconset');
+  const outputDir = path.join(__dirname, 'assets', 'iconset.iconset');
   
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir);
+  // Clean and recreate directory
+  if (fs.existsSync(outputDir)) {
+    fs.rmSync(outputDir, { recursive: true, force: true });
   }
+  fs.mkdirSync(outputDir, { recursive: true });
 
-  sizes.forEach(size => {
+  // Standard macOS iconset sizes
+  const sizes = [
+    { size: 16, suffix: 'icon_16x16.png' },
+    { size: 32, suffix: 'icon_16x16@2x.png' },
+    { size: 32, suffix: 'icon_32x32.png' },
+    { size: 64, suffix: 'icon_32x32@2x.png' },
+    { size: 128, suffix: 'icon_128x128.png' },
+    { size: 256, suffix: 'icon_128x128@2x.png' },
+    { size: 256, suffix: 'icon_256x256.png' },
+    { size: 512, suffix: 'icon_256x256@2x.png' },
+    { size: 512, suffix: 'icon_512x512.png' },
+    { size: 1024, suffix: 'icon_512x512@2x.png' }
+  ];
+
+  sizes.forEach(({ size, suffix }) => {
     const canvas = createCanvas(size, size);
     const ctx = canvas.getContext('2d');
 
@@ -79,12 +93,11 @@ function generateAppIcon() {
     ctx.stroke();
 
     const buffer = canvas.toBuffer('image/png');
-    const filename = `icon_${size}x${size}.png`;
-    fs.writeFileSync(path.join(outputDir, filename), buffer);
-    console.log(`Generated ${filename}`);
+    fs.writeFileSync(path.join(outputDir, suffix), buffer);
+    console.log(`Generated ${suffix}`);
   });
 
-  console.log('App icon sizes generated in iconset/');
+  console.log('App iconset generated in iconset.iconset/');
 }
 
 generateAppIcon();

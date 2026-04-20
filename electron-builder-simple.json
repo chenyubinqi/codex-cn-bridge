@@ -1,0 +1,19 @@
+{
+  "appId": "com.codex-cn-bridge.app",
+  "productName": "Codex CN Bridge",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "electron/dist/**",
+    "dist/**",
+    "config.yaml"
+  ],
+  "extraResources": [
+    "electron/assets/**"
+  ],
+  "mac": {
+    "target": ["dmg", "zip"],
+    "category": "public.app-category.developer-tools"
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "codex-cn-bridge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Codex 0.8+ Responses API \u2194 Chat Completions \u534f\u8bae\u6865\u63a5\uff0c\u63a5\u5165\u56fd\u5185\u5927\u6a21\u578b",
   "main": "electron/dist/main.js",
   "bin": {
