@@ -43,6 +43,7 @@
   "build": {
     "appId": "com.codex-cn-bridge.app",
     "productName": "Codex CN Bridge",
+    "afterPack": "./scripts/afterPack.js",
     "directories": {
       "output": "release"
     },
@@ -53,7 +54,9 @@
     "mac": {
       "target": "dmg",
       "icon": "electron/assets/icon.icns",
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "hardenedRuntime": false
     },
     "win": {
       "target": [
